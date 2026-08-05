@@ -78,11 +78,11 @@ export default class AnkiForgePlugin extends Plugin {
         status.setAttr("aria-label", "AnkiConnect is unavailable");
       }
     };
-    void updateStatus();
-    this.registerInterval(
-      window.setInterval(() => void updateStatus(), 15_000),
-    );
     this.app.workspace.onLayoutReady(() => {
+      void updateStatus();
+      this.registerInterval(
+        window.setInterval(() => void updateStatus(), 15_000),
+      );
       const current = this.app.workspace.getActiveFile();
       if (this.settings.pullOnOpen && current && this.hasAnkiDeck(current))
         void this.pull(current);
@@ -173,7 +173,7 @@ export default class AnkiForgePlugin extends Plugin {
       const repaired = separateInlineForgeMarkers(source);
       if (repaired !== source) {
         source = repaired;
-        await this.app.vault.modify(file, source);
+        await this.app.vault.process(file, () => source);
       }
       let parsed = parseMarkdown(source, this.parserOptions());
       const reconcileWarnings = await this.reconcileKeys(
@@ -194,7 +194,7 @@ export default class AnkiForgePlugin extends Plugin {
       );
       provisionalKeys = marked.keys;
       if (marked.source !== source) {
-        await this.app.vault.modify(file, marked.source);
+        await this.app.vault.process(file, () => marked.source);
         source = marked.source;
         parsed = parseMarkdown(source, this.parserOptions());
       }
@@ -329,9 +329,9 @@ export default class AnkiForgePlugin extends Plugin {
   }
   private async removeUncommittedMarkers(file: TFile, keys: string[]) {
     if (!keys.length) return;
-    const current = await this.app.vault.read(file);
-    const cleaned = removeForgeMarkers(current, keys);
-    if (cleaned !== current) await this.app.vault.modify(file, cleaned);
+    await this.app.vault.process(file, (source) =>
+      removeForgeMarkers(source, keys),
+    );
   }
   private async pull(file: TFile) {
     if (this.running.has(file.path)) return;

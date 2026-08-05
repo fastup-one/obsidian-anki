@@ -1,4 +1,9 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import {
+  App,
+  PluginSettingTab,
+  Setting,
+  type SettingDefinitionItem,
+} from "obsidian";
 import type AnkiForgePlugin from "./main";
 export interface Settings {
   endpoint: string;
@@ -24,6 +29,39 @@ export const DEFAULT_SETTINGS: Settings = {
   syncOnClose: true,
   pullOnOpen: true,
 };
+
+type TextSetting =
+  | "endpoint"
+  | "deck"
+  | "cardTag"
+  | "inlineSeparator"
+  | "reverseSeparator"
+  | "defaultTag";
+type ToggleSetting =
+  | "folderDecks"
+  | "context"
+  | "syncOnClose"
+  | "pullOnOpen";
+
+const normalizeText = (
+  key: TextSetting,
+  value: string,
+  previous: string,
+): string => {
+  switch (key) {
+    case "endpoint":
+    case "defaultTag":
+      return value.trim();
+    case "deck":
+      return value.trim() || "Default";
+    case "cardTag":
+      return value.trim() || "card";
+    case "inlineSeparator":
+    case "reverseSeparator":
+      return value || previous;
+  }
+};
+
 export class SettingsTab extends PluginSettingTab {
   constructor(
     app: App,
@@ -31,33 +69,59 @@ export class SettingsTab extends PluginSettingTab {
   ) {
     super(app, plugin);
   }
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      this.textDefinition("AnkiConnect endpoint", "endpoint"),
+      this.textDefinition("Default deck", "deck"),
+      this.toggleDefinition("Use folder decks", "folderDecks"),
+      this.toggleDefinition("Include heading context", "context"),
+      this.textDefinition("Card tag", "cardTag"),
+      this.textDefinition("Inline separator", "inlineSeparator"),
+      this.textDefinition("Reversed separator", "reverseSeparator"),
+      this.textDefinition("Default Anki tag", "defaultTag"),
+      this.toggleDefinition("Sync on file close", "syncOnClose"),
+      this.toggleDefinition("Pull Anki edits on open", "pullOnOpen"),
+    ];
+  }
+  getControlValue(key: string): unknown {
+    return this.plugin.settings[key as keyof Settings];
+  }
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    if (typeof value === "string") {
+      const textKey = key as TextSetting;
+      this.plugin.settings[textKey] = normalizeText(
+        textKey,
+        value,
+        this.plugin.settings[textKey],
+      );
+    } else if (typeof value === "boolean") {
+      this.plugin.settings[key as ToggleSetting] = value;
+    } else {
+      return;
+    }
+    await this.plugin.saveSettings();
+  }
   display() {
     this.containerEl.empty();
-    this.addText("AnkiConnect endpoint", "endpoint", (value) => value.trim());
-    this.addText("Default deck", "deck", (value) =>
-      value.trim() || "Default",
-    );
+    this.addText("AnkiConnect endpoint", "endpoint");
+    this.addText("Default deck", "deck");
     this.addToggle("Use folder decks", "folderDecks");
     this.addToggle("Include heading context", "context");
-    this.addText("Card tag", "cardTag", (value) => value.trim() || "card");
-    this.addText("Inline separator", "inlineSeparator", (value, previous) =>
-      value || previous,
-    );
-    this.addText("Reversed separator", "reverseSeparator", (value, previous) =>
-      value || previous,
-    );
-    this.addText("Default Anki tag", "defaultTag", (value) => value.trim());
+    this.addText("Card tag", "cardTag");
+    this.addText("Inline separator", "inlineSeparator");
+    this.addText("Reversed separator", "reverseSeparator");
+    this.addText("Default Anki tag", "defaultTag");
     this.addToggle("Sync on file close", "syncOnClose");
     this.addToggle("Pull Anki edits on open", "pullOnOpen");
   }
   private addText(
     name: string,
-    key: "endpoint" | "deck" | "cardTag" | "inlineSeparator" | "reverseSeparator" | "defaultTag",
-    normalize: (value: string, previous: string) => string,
+    key: TextSetting,
   ) {
     new Setting(this.containerEl).setName(name).addText((text) =>
       text.setValue(this.plugin.settings[key]).onChange(async (value) => {
-        this.plugin.settings[key] = normalize(
+        this.plugin.settings[key] = normalizeText(
+          key,
           value,
           this.plugin.settings[key],
         );
@@ -67,7 +131,7 @@ export class SettingsTab extends PluginSettingTab {
   }
   private addToggle(
     name: string,
-    key: "folderDecks" | "context" | "syncOnClose" | "pullOnOpen",
+    key: ToggleSetting,
   ) {
     new Setting(this.containerEl).setName(name).addToggle((toggle) =>
       toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
@@ -75,5 +139,14 @@ export class SettingsTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }),
     );
+  }
+  private textDefinition(name: string, key: TextSetting): SettingDefinitionItem {
+    return { name, control: { type: "text", key } };
+  }
+  private toggleDefinition(
+    name: string,
+    key: ToggleSetting,
+  ): SettingDefinitionItem {
+    return { name, control: { type: "toggle", key } };
   }
 }

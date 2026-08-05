@@ -119,7 +119,8 @@ export async function pullFromAnki(
     applyRemoteCards(source, changes, struck),
     detached,
   );
-  if (changes.length || detached.length) await app.vault.modify(file, source);
+  if (changes.length || detached.length)
+    await app.vault.process(file, () => source);
   for (const commit of commits) commit();
   return { changed: changes.length, detached: detached.length, conflicts };
 }

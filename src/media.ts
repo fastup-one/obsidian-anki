@@ -1,4 +1,4 @@
-import type { App, TFile } from "obsidian";
+import { type App, TFile } from "obsidian";
 import type { AnkiClient } from "./anki";
 import type { ParsedCard } from "./domain";
 
@@ -25,7 +25,7 @@ function resolveMedia(app: App, file: TFile, link: string): TFile | undefined {
   // Resolve the literal vault path, then fall back to an unambiguous basename.
   const normalized = link.replace(/^\.\//, "").replaceAll("\\", "/");
   const direct = app.vault.getAbstractFileByPath(normalized);
-  if (direct && "extension" in direct) return direct as TFile;
+  if (direct instanceof TFile) return direct;
   const matches = app.vault
     .getFiles()
     .filter((candidate) => candidate.name === normalized.split("/").at(-1));
@@ -89,12 +89,14 @@ export async function expandNoteEmbeds(
       const matches = [...value.matchAll(noteEmbed)];
       let result = value;
       for (const match of matches.reverse()) {
+        const link = match[1];
+        if (!link) continue;
         const target = app.metadataCache.getFirstLinkpathDest(
-          match[1]!,
+          link,
           file.path,
         );
         if (!target) {
-          warnings.push(`Missing embedded note: ${match[1]}`);
+          warnings.push(`Missing embedded note: ${link}`);
           continue;
         }
         if (target.extension !== "md") continue;
@@ -103,9 +105,9 @@ export async function expandNoteEmbeds(
           match[2],
         );
         result =
-          result.slice(0, match.index!) +
+          result.slice(0, match.index) +
           replacement +
-          result.slice(match.index! + match[0].length);
+          result.slice(match.index + match[0].length);
       }
       card[side] = result;
     }

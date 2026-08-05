@@ -185,7 +185,9 @@ export class SyncEngine {
       }
       // Anki can briefly reject note generation immediately after its model
       // templates are updated, despite validating the same note successfully.
-      await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, 150 * (attempt + 1)),
+      );
     }
     throw new Error("Anki rejected the note after retrying");
   }
