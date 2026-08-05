@@ -1,5 +1,5 @@
 import { type App, Modal, Setting } from "obsidian";
-import type { SyncPlan } from "./sync";
+import { isZeroingPlan, type SyncPlan } from "./sync";
 import type { ParsedCard } from "./domain";
 
 export class SyncPreviewModal extends Modal {
@@ -21,8 +21,17 @@ export class SyncPreviewModal extends Modal {
       this.choose(false);
       return;
     }
-    this.titleEl.setText("Approve Anki sync");
+    const zeroing = isZeroingPlan(this.plan);
+    this.titleEl.setText(
+      zeroing ? "Delete every Anki card from this file?" : "Approve Anki sync",
+    );
     this.contentEl.createEl("p", { text: this.filePath });
+    if (zeroing) {
+      const warning = this.contentEl.createEl("p", {
+        text: `This file previously owned ${this.plan.remove.length} Anki note(s), but Forge now finds zero cards in it. Continue only if you intentionally removed every card from the file.`,
+      });
+      warning.addClass("mod-warning");
+    }
     this.contentEl.createEl("p", {
       text: `${this.plan.create.length} create, ${this.plan.update.length} update, ${this.plan.remove.length} delete, ${this.plan.unchanged} unchanged.`,
     });
@@ -52,7 +61,11 @@ export class SyncPreviewModal extends Modal {
       .addButton((button) =>
         button
           .setCta()
-          .setButtonText("Approve sync")
+          .setButtonText(
+            zeroing
+              ? `Delete all ${this.plan.remove.length} cards`
+              : "Approve sync",
+          )
           .onClick(() => this.choose(true)),
       );
   }

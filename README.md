@@ -67,6 +67,22 @@ Why do leaves look green? #card
 Chlorophyll absorbs mostly red and blue light, while reflecting green light.
 ```
 
+Before its first sync, a blank line ends a multiline card. The first sync adds
+the card's `^af-...` block ID, which then becomes its authoritative endpoint.
+That lets later edits pulled from Anki safely contain multiple lines or
+paragraphs:
+
+```markdown
+Why do leaves look green? #card
+Chlorophyll absorbs mostly red and blue light.
+
+Leaves reflect more green light than other visible wavelengths.
+^af-k3f8x2m1qz
+```
+
+Keep the generated block ID directly beneath the complete answer and avoid
+editing or copying it by hand.
+
 Add ordinary Obsidian tags anywhere on the card and Anki Forge will carry them into Anki:
 
 ```markdown

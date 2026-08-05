@@ -3,7 +3,7 @@ import type { AnkiNote } from "../src/anki";
 import type { PluginState } from "../src/domain";
 import { parseMarkdown } from "../src/parser";
 import { fingerprint } from "../src/render";
-import { planSync, SyncEngine } from "../src/sync";
+import { isZeroingPlan, planSync, SyncEngine } from "../src/sync";
 
 describe("sync planning", () => {
   it("separates creates, updates, unchanged, and removals", () => {
@@ -44,6 +44,18 @@ describe("sync planning", () => {
       cards: { other: { noteId: 99, fingerprint: "x", filePath: "other.md" } },
     };
     expect(planSync([], state, new Map(), "current.md").remove).toEqual([]);
+  });
+  it("identifies a plan that deletes every card owned by a file", () => {
+    const state: PluginState = {
+      version: 1,
+      cards: {
+        one: { noteId: 1, fingerprint: "x", filePath: "note.md" },
+        two: { noteId: 2, fingerprint: "x", filePath: "note.md" },
+      },
+    };
+    const plan = planSync([], state, new Map(), "note.md");
+    expect(plan.remove).toEqual([1, 2]);
+    expect(isZeroingPlan(plan)).toBe(true);
   });
   it("plans an update when only the destination deck changes", () => {
     const card = parseMarkdown("Question::Answer\n^af-key\n").cards[0]!;

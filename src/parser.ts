@@ -18,30 +18,90 @@ const stableMarker = /^\s*\^(af-[a-zA-Z0-9_-]+)\s*$/;
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+function maskInlineMarkdown(line: string): string {
+  const masked = [...line];
+  const hide = (start: number, end: number) => {
+    for (let i = start; i < end; i++) masked[i] = " ";
+  };
+  for (let index = 0; index < line.length;) {
+    if (line.startsWith("<!--", index)) {
+      const end = line.indexOf("-->", index + 4);
+      if (end >= 0) {
+        hide(index, end + 3);
+        index = end + 3;
+        continue;
+      }
+    }
+    if (line[index] === "`") {
+      const delimiter = /^`+/.exec(line.slice(index))![0];
+      const end = line.indexOf(delimiter, index + delimiter.length);
+      if (end >= 0) {
+        hide(index, end + delimiter.length);
+        index = end + delimiter.length;
+        continue;
+      }
+    }
+    if (line[index] === "$" && line[index - 1] !== "\\") {
+      const delimiter = line[index + 1] === "$" ? "$$" : "$";
+      const end = line.indexOf(delimiter, index + delimiter.length);
+      if (end >= 0) {
+        hide(index, end + delimiter.length);
+        index = end + delimiter.length;
+        continue;
+      }
+    }
+    index++;
+  }
+  return masked.join("");
+}
+
 function cardTag(line: string, options: ParserOptions): RegExpExecArray | null {
   return new RegExp(
     `(?:^|\\s)#${escapeRegExp(options.cardTag)}(?:[/-](reverse|spaced))?(?=\\s|$)`,
     "iu",
-  ).exec(line);
+  ).exec(maskInlineMarkdown(line));
 }
 
 function splitTags(text: string): { text: string; tags: string[] } {
   const tags: string[] = [];
-  const clean = text
-    .replace(/(?:^|\s)#([\p{L}\p{N}_/-]+)/gu, (_whole, tag: string) => {
-      tags.push(tag.replaceAll("/", "::"));
-      return "";
-    })
-    .trim();
+  const masked = maskInlineMarkdown(text);
+  const ranges = [...masked.matchAll(/(?:^|\s)#([\p{L}\p{N}_/-]+)/gu)].map(
+    (match) => {
+      tags.push(match[1]!.replaceAll("/", "::"));
+      return [match.index, match.index + match[0].length] as const;
+    },
+  );
+  let clean = text;
+  for (const [start, end] of ranges.reverse())
+    clean = clean.slice(0, start) + clean.slice(end);
+  clean = clean.trim();
   return { text: clean, tags };
+}
+
+function frontmatterTags(value: string): string[] {
+  const trimmed = value.trim();
+  const entries =
+    trimmed.startsWith("[") && trimmed.endsWith("]")
+      ? trimmed.slice(1, -1).split(",")
+      : trimmed.split(/\s+/);
+  return entries
+    .map((tag) =>
+      tag
+        .trim()
+        .replace(/^['"]|['"]$/g, "")
+        .replace(/^#/, ""),
+    )
+    .filter(Boolean)
+    .map((tag) => tag.replaceAll("/", "::"));
 }
 
 function inline(
   line: string,
   options: ParserOptions,
 ): { kind: CardKind; front: string; back: string } | undefined {
-  const reverseAt = line.indexOf(options.reverseSeparator);
-  const normalAt = line.indexOf(options.inlineSeparator);
+  const searchable = maskInlineMarkdown(line);
+  const reverseAt = searchable.indexOf(options.reverseSeparator);
+  const normalAt = searchable.indexOf(options.inlineSeparator);
   const reversed = reverseAt >= 0 && (normalAt < 0 || reverseAt === normalAt);
   const at = reversed ? reverseAt : normalAt;
   const separator = reversed
@@ -121,6 +181,27 @@ function cloze(line: string): string | undefined {
   return found ? output : undefined;
 }
 
+function markerAheadBeforeCard(
+  lines: string[],
+  start: number,
+  options: ParserOptions,
+): boolean {
+  for (let index = start; index < lines.length; index++) {
+    const line = (lines[index] ?? "").replace(/\r?\n$/, "");
+    if (stableMarker.test(line)) return true;
+    if (!line.trim()) continue;
+    const text = splitTags(line).text;
+    if (
+      /^ {0,3}#{1,6}\s/.test(line) ||
+      cardTag(line, options) ||
+      inline(text, options) ||
+      cloze(text)
+    )
+      return false;
+  }
+  return false;
+}
+
 export function parseMarkdown(
   source: string,
   overrides: Partial<ParserOptions> = {},
@@ -135,8 +216,11 @@ export function parseMarkdown(
   let deck: string | undefined;
   let globalTags: string[] = [];
   let inFrontmatter = false;
+  let frontmatterStart = 0;
   let consumedUntil = -1;
   let displayMath = false;
+  let displayMathStart = 0;
+  let fenceStart = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
@@ -144,6 +228,7 @@ export function parseMarkdown(
     const trimmed = line.trim();
     if (i === 0 && trimmed === "---") {
       inFrontmatter = true;
+      frontmatterStart = 1;
       offset += raw.length;
       continue;
     }
@@ -152,7 +237,7 @@ export function parseMarkdown(
       else if (/^anki-deck\s*:/i.test(line))
         deck = line.slice(line.indexOf(":") + 1).trim();
       else if (/^tags\s*:/i.test(line))
-        globalTags = splitTags(line.slice(line.indexOf(":") + 1)).tags;
+        globalTags = frontmatterTags(line.slice(line.indexOf(":") + 1));
       offset += raw.length;
       continue;
     }
@@ -164,6 +249,7 @@ export function parseMarkdown(
           ? undefined
           : fence
         : token;
+      if (fence === token) fenceStart = i + 1;
       offset += raw.length;
       continue;
     }
@@ -177,7 +263,10 @@ export function parseMarkdown(
       offset += raw.length;
       continue;
     }
-    if (displayDelimiters % 2 === 1) displayMath = true;
+    if (displayDelimiters % 2 === 1) {
+      displayMath = true;
+      displayMathStart = i + 1;
+    }
     if (/^~~[\s\S]+~~$/.test(trimmed)) {
       offset += raw.length;
       continue;
@@ -212,7 +301,7 @@ export function parseMarkdown(
     let rangeEnd = offset + raw.length;
     let markerOffset = rangeEnd;
     let sourceStyle: ParsedCard["sourceStyle"] = "inline";
-    let sourceTag: string | undefined;
+    let sourceTag: string | undefined = `#${options.cardTag}`;
     if (tagged) {
       sourceStyle = "tagged";
       sourceTag = tagged[0].trim();
@@ -224,6 +313,8 @@ export function parseMarkdown(
         const answer: string[] = [];
         let answerDisplayMath = false;
         let answerFence: string | undefined;
+        let answerMathStart = 0;
+        let answerFenceStart = 0;
         if (mode !== "spaced")
           for (let j = i + 1; j < lines.length; j++) {
             const nextLine = (lines[j] ?? "").replace(/\r?\n$/, "");
@@ -236,7 +327,8 @@ export function parseMarkdown(
             if (
               !isDisplayMath &&
               !inCodeFence &&
-              (!nextLine.trim() ||
+              ((!nextLine.trim() &&
+                !markerAheadBeforeCard(lines, j + 1, options)) ||
                 stableMarker.test(nextLine) ||
                 /^ {0,3}#{1,6}\s/.test(nextLine) ||
                 cardTag(nextLine, options) ||
@@ -250,6 +342,8 @@ export function parseMarkdown(
             consumedUntil = j;
             if (mathDelimiters % 2 === 1)
               answerDisplayMath = !answerDisplayMath;
+            if (mathDelimiters % 2 === 1 && answerDisplayMath)
+              answerMathStart = j + 1;
             if (fenceMatch) {
               const token = fenceMatch[1]!;
               answerFence = answerFence
@@ -258,8 +352,19 @@ export function parseMarkdown(
                   ? undefined
                   : answerFence
                 : token;
+              if (answerFence === token) answerFenceStart = j + 1;
             }
           }
+        if (answerDisplayMath)
+          diagnostics.push({
+            line: answerMathStart,
+            message: "Unterminated display math in card answer",
+          });
+        if (answerFence)
+          diagnostics.push({
+            line: answerFenceStart,
+            message: "Unterminated code fence in card answer",
+          });
         candidate = {
           kind:
             mode === "reverse"
@@ -296,7 +401,7 @@ export function parseMarkdown(
             ...tagData.tags.filter(
               (t) =>
                 !new RegExp(
-                  `^${escapeRegExp(options.cardTag)}(?:[/-])?`,
+                  `^${escapeRegExp(options.cardTag)}(?:[/-](?:reverse|spaced))?$`,
                   "i",
                 ).test(t),
             ),
@@ -306,11 +411,23 @@ export function parseMarkdown(
         range: { start: offset, end: rangeEnd, line: i + 1 },
         markerOffset,
         sourceStyle,
-        ...(sourceTag ? { sourceTag } : {}),
+        sourceTag,
       });
     }
     offset += raw.length;
   }
+  if (inFrontmatter)
+    diagnostics.push({
+      line: frontmatterStart,
+      message: "Unterminated YAML frontmatter",
+    });
+  if (fence)
+    diagnostics.push({ line: fenceStart, message: "Unterminated code fence" });
+  if (displayMath)
+    diagnostics.push({
+      line: displayMathStart,
+      message: "Unterminated display math",
+    });
   return { cards, deck, globalTags, diagnostics };
 }
 
@@ -362,6 +479,10 @@ export function serializeSnapshot(
       `#card${value.kind === "reversed" ? "-reverse" : value.kind === "spaced" ? "-spaced" : ""}`;
     return `${value.front} ${tag}${tags}${value.kind === "spaced" || !value.back ? "" : `\n${value.back}`}`;
   }
+  if (card?.sourceStyle === "inline" && value.back.includes("\n")) {
+    const tag = `${card.sourceTag ?? "#card"}${value.kind === "reversed" ? "-reverse" : ""}`;
+    return `${value.front} ${tag}${tags}\n${value.back}`;
+  }
   if (value.kind === "spaced") return `${value.front} #card-spaced${tags}`;
   return `${value.front}${value.kind === "reversed" ? ":::" : "::"}${value.back}${tags}`;
 }
@@ -370,11 +491,16 @@ export function applyRemoteCards(
   source: string,
   changes: { card: ParsedCard; value: CardSnapshot }[],
   strikes: ParsedCard[] = [],
+  inheritedTags: string[] = [],
 ): string {
+  const inherited = new Set(inheritedTags);
   const edits = changes.map(({ card, value }) => ({
     card,
     replacement:
-      serializeSnapshot(value, card) +
+      serializeSnapshot(
+        { ...value, tags: value.tags.filter((tag) => !inherited.has(tag)) },
+        card,
+      ) +
       (source.slice(card.range.start, card.range.end).endsWith("\n")
         ? "\n"
         : ""),

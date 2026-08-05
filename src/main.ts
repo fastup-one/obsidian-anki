@@ -181,6 +181,12 @@ export default class AnkiForgePlugin extends Plugin {
         await this.app.vault.process(file, () => source);
       }
       let parsed = parseMarkdown(source, this.parserOptions());
+      if (parsed.diagnostics.length)
+        throw new Error(
+          parsed.diagnostics
+            .map((item) => `Line ${item.line}: ${item.message}`)
+            .join("; "),
+        );
       const duplicateKeys = duplicateCardKeys(parsed.cards);
       if (duplicateKeys.length)
         throw new Error(
@@ -361,6 +367,10 @@ export default class AnkiForgePlugin extends Plugin {
       }
     } catch (error) {
       console.warn("Anki Forge pull skipped", error);
+      new Notice(
+        `Anki Forge pull skipped: ${error instanceof Error ? error.message : String(error)}`,
+        10_000,
+      );
     } finally {
       this.running.delete(file.path);
     }

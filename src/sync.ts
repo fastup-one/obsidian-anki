@@ -18,6 +18,9 @@ export interface SyncSummary {
   failures: string[];
 }
 
+export const isZeroingPlan = (plan: SyncPlan): boolean =>
+  plan.cards.length === 0 && plan.remove.length > 0;
+
 const model = (card: ParsedCard) =>
   card.kind === "cloze"
     ? "Anki Forge Cloze"

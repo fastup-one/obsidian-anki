@@ -48,6 +48,12 @@ export async function pullFromAnki(
 ): Promise<PullSummary> {
   let source = await app.vault.read(file);
   const doc = parseMarkdown(source, options);
+  if (doc.diagnostics.length)
+    throw new Error(
+      doc.diagnostics
+        .map((item) => `Line ${item.line}: ${item.message}`)
+        .join("; "),
+    );
   const duplicateKeys = duplicateCardKeys(doc.cards);
   if (duplicateKeys.length)
     throw new Error(
@@ -126,7 +132,7 @@ export async function pullFromAnki(
   )
     return { changed: 0, detached: 0, conflicts };
   source = removeForgeMarkers(
-    applyRemoteCards(source, changes, struck),
+    applyRemoteCards(source, changes, struck, doc.globalTags),
     detached,
   );
   if (changes.length || detached.length)

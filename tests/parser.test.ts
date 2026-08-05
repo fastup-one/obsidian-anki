@@ -77,6 +77,13 @@ $$`;
     expect(doc.cards[0]?.tags).toEqual(["school", "bio::cells", "exam"]);
     expect(doc.cards[2]?.front).toContain("{{c1::ATP}}");
   });
+  it("parses ordinary YAML frontmatter tags", () => {
+    const doc = parseMarkdown(
+      "---\nanki-deck: Study\ntags: [school, bio/cells]\n---\nQ::A\n",
+    );
+    expect(doc.globalTags).toEqual(["school", "bio::cells"]);
+    expect(doc.cards[0]?.tags).toEqual(["school", "bio::cells"]);
+  });
 
   it("ignores syntax inside fenced code", () => {
     const doc = parseMarkdown(
@@ -232,6 +239,67 @@ Next::Card
     ]);
     expect(updated).toBe("Why? #card\nNew answer\n^af-key\n");
   });
+  it("promotes an inline card when Anki adds a multiline answer", () => {
+    const source = "Why?::Old answer\n^af-key\n";
+    const card = parseMarkdown(source, { cardTag: "flashcard" }).cards[0]!;
+    const updated = applyRemoteCards(source, [
+      { card, value: { ...card, back: "Line one\nLine two" } },
+    ]);
+    expect(updated).toBe("Why? #flashcard\nLine one\nLine two\n^af-key\n");
+    expect(
+      parseMarkdown(updated, { cardTag: "flashcard" }).cards[0]?.back,
+    ).toBe("Line one\nLine two");
+  });
+  it("does not discard tags that merely begin with the card-tag name", () => {
+    expect(parseMarkdown("Q::A #cardiology\n").cards[0]?.tags).toEqual([
+      "cardiology",
+    ]);
+  });
+  it("does not copy inherited frontmatter tags onto edited card lines", () => {
+    const source =
+      "---\ntags: [school, parser/check]\n---\nQuestion::Old\n^af-key\n";
+    const doc = parseMarkdown(source);
+    const updated = applyRemoteCards(
+      source,
+      [
+        {
+          card: doc.cards[0]!,
+          value: {
+            ...doc.cards[0]!,
+            back: "New",
+            tags: ["school", "parser::check", "anki-only"],
+          },
+        },
+      ],
+      [],
+      doc.globalTags,
+    );
+    expect(updated).toContain("Question::New #anki-only\n^af-key");
+    expect(updated).not.toContain("Question::New #school");
+    expect(updated).not.toContain("Question::New #parser/check");
+  });
+  it("keeps Anki paragraphs together until an existing Forge marker", () => {
+    const source =
+      "Why is the sky blue? #card\nShorter wavelengths scatter more strongly.\n^af-sky\nNext::Card\n^af-next\n";
+    const card = parseMarkdown(source).cards[0]!;
+    const pulled = applyRemoteCards(source, [
+      {
+        card,
+        value: {
+          ...card,
+          back: "Shorter wavelengths\n\nscatter more strongly.",
+        },
+      },
+    ]);
+    const reparsed = parseMarkdown(pulled);
+    expect(reparsed.cards.map((item) => item.key)).toEqual(["sky", "next"]);
+    expect(reparsed.cards[0]?.back).toBe(
+      "Shorter wavelengths\n\nscatter more strongly.",
+    );
+    expect(
+      insertMarkers(pulled, reparsed.cards, () => "unexpected").keys,
+    ).toEqual([]);
+  });
   it("keeps fenced code inside a multiline answer", () => {
     const source =
       "Explain #card\n```ts\nconst answer = { value: 42 };\n```\nNext::Card\n";
@@ -250,5 +318,27 @@ Next::Card
   it("detects duplicate Forge keys", () => {
     const cards = parseMarkdown("One::1\n^af-same\nTwo::2\n^af-same\n").cards;
     expect(duplicateCardKeys(cards)).toEqual(["same"]);
+  });
+  it("does not parse separators or tags inside inline code and math", () => {
+    const source =
+      "`std::vector::iterator`\n$left::right$\nReal::Card `#literal` #actual\n";
+    const cards = parseMarkdown(source).cards;
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.front).toBe("Real");
+    expect(cards[0]?.tags).toEqual(["actual"]);
+  });
+  it.each([
+    ["---\nanki-deck: Math\nCard::Hidden\n", "Unterminated YAML frontmatter"],
+    ["```ts\nCard::Hidden\n", "Unterminated code fence"],
+    ["$$\nCard::Hidden\n", "Unterminated display math"],
+  ])("diagnoses an unterminated protected region", (source, message) => {
+    const parsed = parseMarkdown(source);
+    expect(parsed.diagnostics.map((item) => item.message)).toContain(message);
+  });
+  it("diagnoses an unterminated protected region in a multiline card", () => {
+    const parsed = parseMarkdown("Question #card\n$$\nx = 2\nNext::Card\n");
+    expect(parsed.diagnostics.map((item) => item.message)).toContain(
+      "Unterminated display math in card answer",
+    );
   });
 });
