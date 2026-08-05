@@ -1,0 +1,45 @@
+{
+  "name": "obsidian-anki-forge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A robust Markdown-to-Anki bridge for Obsidian",
+  "type": "module",
+  "author": "wavey",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keptan/obsidian-anki.git"
+  },
+  "bugs": {
+    "url": "https://github.com/keptan/obsidian-anki/issues"
+  },
+  "homepage": "https://github.com/keptan/obsidian-anki#readme",
+  "keywords": [
+    "anki",
+    "flashcards",
+    "obsidian",
+    "obsidian-plugin",
+    "spaced-repetition"
+  ],
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs production && node release.mjs",
+    "check": "npm test && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^24.0.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.8.7",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

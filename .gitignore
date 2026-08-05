@@ -1,0 +1,8 @@
+node_modules/
+main.js
+*.map
+dist/
+data.json
+.DS_Store
+.idea/
+.vscode/
