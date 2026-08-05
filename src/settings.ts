@@ -79,8 +79,16 @@ export class SettingsTab extends PluginSettingTab {
       this.textDefinition("Inline separator", "inlineSeparator"),
       this.textDefinition("Reversed separator", "reverseSeparator"),
       this.textDefinition("Default Anki tag", "defaultTag"),
-      this.toggleDefinition("Sync on file close", "syncOnClose"),
-      this.toggleDefinition("Pull Anki edits on open", "pullOnOpen"),
+      this.toggleDefinition(
+        "Automatically sync when leaving a note",
+        "syncOnClose",
+        "Syncs opted-in notes after you switch away from them.",
+      ),
+      this.toggleDefinition(
+        "Automatically pull when opening a note",
+        "pullOnOpen",
+        "Checks opted-in notes for changes made in Anki.",
+      ),
     ];
   }
   getControlValue(key: string): unknown {
@@ -111,8 +119,16 @@ export class SettingsTab extends PluginSettingTab {
     this.addText("Inline separator", "inlineSeparator");
     this.addText("Reversed separator", "reverseSeparator");
     this.addText("Default Anki tag", "defaultTag");
-    this.addToggle("Sync on file close", "syncOnClose");
-    this.addToggle("Pull Anki edits on open", "pullOnOpen");
+    this.addToggle(
+      "Automatically sync when leaving a note",
+      "syncOnClose",
+      "Syncs opted-in notes after you switch away from them.",
+    );
+    this.addToggle(
+      "Automatically pull when opening a note",
+      "pullOnOpen",
+      "Checks opted-in notes for changes made in Anki.",
+    );
   }
   private addText(
     name: string,
@@ -132,8 +148,11 @@ export class SettingsTab extends PluginSettingTab {
   private addToggle(
     name: string,
     key: ToggleSetting,
+    desc?: string,
   ) {
-    new Setting(this.containerEl).setName(name).addToggle((toggle) =>
+    const setting = new Setting(this.containerEl).setName(name);
+    if (desc) setting.setDesc(desc);
+    setting.addToggle((toggle) =>
       toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
         this.plugin.settings[key] = value;
         await this.plugin.saveSettings();
@@ -146,7 +165,12 @@ export class SettingsTab extends PluginSettingTab {
   private toggleDefinition(
     name: string,
     key: ToggleSetting,
+    desc?: string,
   ): SettingDefinitionItem {
-    return { name, control: { type: "toggle", key } };
+    return {
+      name,
+      ...(desc ? { desc } : {}),
+      control: { type: "toggle", key },
+    };
   }
 }

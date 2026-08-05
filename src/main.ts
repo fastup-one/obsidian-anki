@@ -100,7 +100,7 @@ export default class AnkiForgePlugin extends Plugin {
         ) {
           // Let Obsidian finish flushing the editor buffer before reading the file.
           const timeout = window.setTimeout(
-            () => void this.sync(closed, false),
+            () => void this.sync(closed, false, true),
             250,
           );
           this.register(() => window.clearTimeout(timeout));
@@ -158,7 +158,11 @@ export default class AnkiForgePlugin extends Plugin {
       frontmatter["anki-deck"].trim().length > 0
     );
   }
-  private async sync(file: TFile, announceRunning = true) {
+  private async sync(
+    file: TFile,
+    announceRunning = true,
+    silentWhenUnchanged = false,
+  ) {
     if (this.running.has(file.path)) {
       if (announceRunning) new Notice("That note is already syncing.");
       return;
@@ -255,9 +259,11 @@ export default class AnkiForgePlugin extends Plugin {
       provisionalKeys = [];
       summary.failures.push(...reconcileWarnings, ...mediaWarnings);
       await this.saveSettings();
-      new Notice(
-        `Anki Forge: ${summary.created} created, ${summary.updated} updated, ${summary.deleted} deleted, ${summary.unchanged} unchanged.`,
-      );
+      const changed = summary.created + summary.updated + summary.deleted > 0;
+      if (!silentWhenUnchanged || changed || summary.failures.length)
+        new Notice(
+          `Anki Forge: ${summary.created} created, ${summary.updated} updated, ${summary.deleted} deleted, ${summary.unchanged} unchanged.`,
+        );
       if (summary.failures.length) new ReportModal(this.app, summary).open();
     } catch (error) {
       await this.removeUncommittedMarkers(

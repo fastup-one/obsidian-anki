@@ -31,6 +31,13 @@ When Anki Forge is available in Obsidian's community plugin directory:
 
 For a manual installation, download `main.js` and `manifest.json` from the latest GitHub release. Put them in `<your vault>/.obsidian/plugins/anki-forge/`, then reload Obsidian.
 
+Release files include signed GitHub build-provenance attestations. After downloading them, you can verify each file with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify main.js --repo keptan/obsidian-anki
+gh attestation verify manifest.json --repo keptan/obsidian-anki
+```
+
 ## Your first cards
 
 The simplest card uses two colons:
@@ -130,8 +137,8 @@ You can configure:
 - Default Anki tags
 - Inline and reversed-card separators
 - Heading context on cards
-- Automatic sync when leaving a note
-- Pulling Anki edits when opening a note
+- Automatic sync when leaving a note, independently toggleable
+- Automatic pulling of Anki edits when opening a note, independently toggleable
 
 ## Privacy
 
