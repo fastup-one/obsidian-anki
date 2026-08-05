@@ -16,6 +16,13 @@ const defaults: ParserOptions = {
 
 const stableMarker = /^\s*\^(af-[a-zA-Z0-9_-]+)\s*$/;
 
+function cardTag(line: string, options: ParserOptions): RegExpExecArray | null {
+  return new RegExp(
+    `(?:^|\\s)#${options.cardTag}(?:[/-](reverse|spaced))?(?=\\s|$)`,
+    "iu",
+  ).exec(line);
+}
+
 function splitTags(text: string): { text: string; tags: string[] } {
   const tags: string[] = [];
   const clean = text
@@ -187,10 +194,7 @@ export function parseMarkdown(
       offset += raw.length;
       continue;
     }
-    const tagged = new RegExp(
-      `(?:^|\\s)#${options.cardTag}(?:[/-](reverse|spaced))?(?=\\s|$)`,
-      "iu",
-    ).exec(line);
+    const tagged = cardTag(line, options);
     const tagData = splitTags(line);
     let candidate:
       | Omit<ParsedCard, "range" | "markerOffset" | "tags" | "context">
@@ -204,20 +208,31 @@ export function parseMarkdown(
         diagnostics.push({ line: i + 1, message: "Card tag has no prompt" });
       else {
         const answer: string[] = [];
+        let answerDisplayMath = false;
         if (mode !== "spaced")
           for (let j = i + 1; j < lines.length; j++) {
             const nextLine = (lines[j] ?? "").replace(/\r?\n$/, "");
+            const nextText = splitTags(nextLine).text;
+            const mathDelimiters = [...nextLine.matchAll(/(?<!\\)\$\$/g)]
+              .length;
+            const isDisplayMath = answerDisplayMath || mathDelimiters > 0;
             if (
-              !nextLine.trim() ||
-              stableMarker.test(nextLine) ||
-              /^ {0,3}#{1,6}\s/.test(nextLine) ||
-              /^(`{3,}|~{3,})/.test(nextLine.trim())
+              !isDisplayMath &&
+              (!nextLine.trim() ||
+                stableMarker.test(nextLine) ||
+                /^ {0,3}#{1,6}\s/.test(nextLine) ||
+                /^(`{3,}|~{3,})/.test(nextLine.trim()) ||
+                cardTag(nextLine, options) ||
+                inline(nextText, options) ||
+                cloze(nextText))
             )
               break;
             answer.push(nextLine);
             rangeEnd += (lines[j] ?? "").length;
             markerOffset = rangeEnd;
             consumedUntil = j;
+            if (mathDelimiters % 2 === 1)
+              answerDisplayMath = !answerDisplayMath;
           }
         candidate = {
           kind:
@@ -239,7 +254,8 @@ export function parseMarkdown(
         candidate = { kind: "cloze", front: parsedCloze, back: "" };
     }
     if (candidate) {
-      const next = (lines[i + 1] ?? "").trim();
+      const markerLine = consumedUntil >= i ? consumedUntil + 1 : i + 1;
+      const next = (lines[markerLine] ?? "").trim();
       const marker = stableMarker.exec(next);
       const context = options.context
         ? headings.filter(Boolean).map((h) => h.title)

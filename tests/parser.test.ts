@@ -6,7 +6,11 @@ import {
   separateInlineForgeMarkers,
 } from "../src/parser";
 import { extractMediaPaths } from "../src/media";
-import { markdownToAnki, renderCard } from "../src/render";
+import {
+  markdownToAnki,
+  preserveEquivalentMarkdown,
+  renderCard,
+} from "../src/render";
 
 describe("Markdown scanner", () => {
   it("preserves spaces in embedded media paths", () => {
@@ -18,6 +22,39 @@ describe("Markdown scanner", () => {
     const html = markdownToAnki("![[Pasted image 20260805144412.png|323]]");
     expect(html).toContain('<img src="pasted%20image%2020260805144412.png"');
     expect(html).not.toContain("&lt;img");
+  });
+  it("preserves original math when Anki only normalizes rendered HTML", () => {
+    const original = String.raw`$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$`;
+    const stripParagraph = (html: string) =>
+      html.replace(/^<p>|<\/p>\n?$/g, "");
+    const normalizedByAnki = markdownToAnki(original).replace(
+      "<p>",
+      "<div>",
+    ).replace("</p>", "</div>");
+    const normalizeBlocks = (html: string) =>
+      stripParagraph(html.replace(/^<div>|<\/div>\n?$/g, ""));
+
+    expect(
+      preserveEquivalentMarkdown(normalizedByAnki, original, normalizeBlocks),
+    ).toBe(original);
+    expect(
+      preserveEquivalentMarkdown("<div>(y)</div>", original, normalizeBlocks),
+    ).toBe("(y)");
+  });
+  it("preserves multiline math when Anki changes its line layout", () => {
+    const original = String.raw`$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$`;
+    const ankiHtml = String.raw`<div>\[x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\]</div>`;
+    const htmlToMarkdown = (html: string) =>
+      html
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/?(?:p|div)>/gi, "")
+        .trim();
+
+    expect(
+      preserveEquivalentMarkdown(ankiHtml, original, htmlToMarkdown),
+    ).toBe(original);
   });
   it("keeps cloze syntax only in the visible cloze field", () => {
     const card = parseMarkdown("Learn {1:this} and {2:that}\n").cards[0]!;
@@ -59,6 +96,22 @@ describe("Markdown scanner", () => {
       "key-1",
       "key-2",
     ]);
+  });
+  it("keeps adjacent cards separate through a pull round trip", () => {
+    const source = "One::1\n^af-one\nTwo::2\n^af-two\n";
+    const cards = parseMarkdown(source).cards;
+    const pulled = applyRemoteCards(
+      source,
+      cards.map((card) => ({ card, value: { ...card } })),
+    );
+    const reparsed = parseMarkdown(pulled).cards;
+
+    expect(pulled).toBe(source);
+    expect(reparsed.map(({ key, front, back }) => ({ key, front, back })))
+      .toEqual([
+        { key: "one", front: "One", back: "1" },
+        { key: "two", front: "Two", back: "2" },
+      ]);
   });
 
   it("puts a block ID on its own line when the file has no final newline", () => {
@@ -115,5 +168,57 @@ describe("Markdown scanner", () => {
     ).cards;
     expect(cards).toHaveLength(2);
     expect(cards[0]?.back).toBe("Because line one\nand line two");
+  });
+  it("separates a multiline card from an adjacent inline card", () => {
+    const source = "Why? #card\nBecause\nNext::Card\n";
+    const cards = parseMarkdown(source).cards;
+    expect(cards.map(({ front, back }) => ({ front, back }))).toEqual([
+      { front: "Why?", back: "Because" },
+      { front: "Next", back: "Card" },
+    ]);
+
+    let index = 0;
+    const marked = insertMarkers(
+      source,
+      cards,
+      () => ["multi", "inline"][index++]!,
+    );
+    expect(marked.source).toBe(
+      "Why? #card\nBecause\n^af-multi\nNext::Card\n^af-inline\n",
+    );
+    expect(
+      parseMarkdown(marked.source).cards.map(({ key, front, back }) => ({
+        key,
+        front,
+        back,
+      })),
+    ).toEqual([
+      { key: "multi", front: "Why?", back: "Because" },
+      { key: "inline", front: "Next", back: "Card" },
+    ]);
+  });
+  it("places a multiline card marker after an entire display-math answer", () => {
+    const source = String.raw`Solve this #card
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$
+Next::Card
+`;
+    const cards = parseMarkdown(source).cards;
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.back).toContain(String.raw`\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`);
+
+    let index = 0;
+    const marked = insertMarkers(
+      source,
+      cards,
+      () => ["math", "inline"][index++]!,
+    ).source;
+    expect(marked).toContain("\n$$\n^af-math\nNext::Card");
+    expect(marked).not.toContain("$$\n^af-math\nx =");
+    expect(parseMarkdown(marked).cards.map((card) => card.key)).toEqual([
+      "math",
+      "inline",
+    ]);
   });
 });

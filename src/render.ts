@@ -49,6 +49,33 @@ export function markdownToAnki(value: string): string {
     .replace(/(^|[^$])\$([^\n$]+?)\$/g, "$1\\\\($2\\\\)");
   return md.render(expanded);
 }
+export function preserveEquivalentMarkdown(
+  remoteHtml: string,
+  originalMarkdown: string,
+  htmlToMarkdown: (html: string) => string,
+): string {
+  const remoteMarkdown = htmlToMarkdown(remoteHtml).trim();
+  const renderedMarkdown = htmlToMarkdown(
+    markdownToAnki(originalMarkdown),
+  ).trim();
+  const canonical = (value: string) =>
+    value
+      .replaceAll("\r\n", "\n")
+      .replace(
+        /\\\[([\s\S]*?)\\\]/g,
+        (_match, body: string) =>
+          `\\[${body.replace(/[ \t]*\n[ \t]*/g, "")}\\]`,
+      )
+      .replace(
+        /\$\$([\s\S]*?)\$\$/g,
+        (_match, body: string) =>
+          `\\[${body.replace(/[ \t]*\n[ \t]*/g, "")}\\]`,
+      )
+      .trim();
+  return canonical(remoteMarkdown) === canonical(renderedMarkdown)
+    ? originalMarkdown
+    : remoteMarkdown;
+}
 export function renderCard(card: ParsedCard, sourceLink: string) {
   const context = card.context.join(" › ");
   const extra = [context, `[Open source note](${sourceLink})`]

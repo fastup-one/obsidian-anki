@@ -8,22 +8,27 @@ import {
   parseMarkdown,
   removeForgeMarkers,
 } from "./parser";
-import { snapshot } from "./render";
+import { preserveEquivalentMarkdown, snapshot } from "./render";
 import { approvePull } from "./sync-preview-modal";
 
 const equal = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
-function field(note: AnkiNote, name: string) {
-  return htmlToMarkdown(note.fields[name]?.value ?? "").trim();
+function field(note: AnkiNote, name: string, original: string) {
+  return preserveEquivalentMarkdown(
+    note.fields[name]?.value ?? "",
+    original,
+    htmlToMarkdown,
+  );
 }
 function remoteSnapshot(note: AnkiNote, fallback: CardSnapshot): CardSnapshot {
-  const frontField = field(note, "Front");
-  const clozeField = field(note, "Cloze");
+  const frontField = field(note, "Front", fallback.front);
+  const clozeField = field(note, "Cloze", fallback.front);
   const front = fallback.kind === "cloze" ? clozeField : frontField;
   return {
     kind: fallback.kind,
     front,
-    back: fallback.kind === "cloze" ? "" : field(note, "Back"),
+    back:
+      fallback.kind === "cloze" ? "" : field(note, "Back", fallback.back),
     tags: [...note.tags].sort(),
   };
 }
