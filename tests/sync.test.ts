@@ -115,4 +115,62 @@ describe("fault isolation", () => {
     expect(summary.failures).toHaveLength(1);
     expect(state.cards.ok?.noteId).toBe(42);
   });
+  it("does not record a failed update as synchronized", async () => {
+    const cards = parseMarkdown(
+      "Broken::A\n^af-broken\nValid::B\n^af-valid\n",
+    ).cards;
+    const note = (noteId: number): AnkiNote => ({
+      noteId,
+      modelName: "Anki Forge Basic",
+      tags: [],
+      fields: {},
+      cards: [],
+    });
+    const fake = {
+      modelNames: async () => ["Anki Forge Basic"],
+      modelFieldNames: async () => ["Front", "Back", "Extra", "ForgeKey"],
+      modelFieldAdd: async () => null,
+      modelFieldRemove: async () => null,
+      modelFieldReposition: async () => null,
+      updateModelTemplates: async () => null,
+      updateModelStyling: async () => null,
+      createModel: async () => 1,
+      createDeck: async () => 1,
+      updateNoteFields: async (id: number) => {
+        if (id === 1) throw new Error("bad field");
+        return null;
+      },
+      addTags: async () => null,
+      removeTags: async () => null,
+      findCards: async () => [],
+      changeDeck: async () => null,
+      deleteNotes: async () => null,
+    };
+    const state: PluginState = {
+      version: 1,
+      cards: {
+        broken: { noteId: 1, fingerprint: "old" },
+        valid: { noteId: 2, fingerprint: "old" },
+      },
+    };
+    const summary = await new SyncEngine(fake as never).apply(
+      {
+        cards,
+        create: [],
+        update: [
+          { card: cards[0]!, noteId: 1, existing: note(1) },
+          { card: cards[1]!, noteId: 2, existing: note(2) },
+        ],
+        remove: [],
+        unchanged: 0,
+      },
+      state,
+      "Default",
+      "source",
+    );
+    expect(summary.updated).toBe(1);
+    expect(summary.failures).toEqual(["Line 1: bad field"]);
+    expect(state.cards.broken?.fingerprint).toBe("old");
+    expect(state.cards.valid?.fingerprint).toBe(fingerprint(cards[1]!));
+  });
 });

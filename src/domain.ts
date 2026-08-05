@@ -15,6 +15,8 @@ export interface ParsedCard {
   context: string[];
   range: SourceRange;
   markerOffset: number;
+  sourceStyle: "inline" | "tagged" | "cloze";
+  sourceTag?: string;
 }
 
 export interface ParsedDocument {

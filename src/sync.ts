@@ -122,33 +122,16 @@ export class SyncEngine {
         Array.from({ length: Math.min(4, notes.length) }, worker),
       );
     }
-    const actions = plan.update.flatMap(({ card, noteId, existing }) => {
-      const wanted = new Set([...card.tags, ...managedTags]);
-      const current = new Set(existing.tags);
-      return [
-        {
-          action: "updateNoteFields",
-          params: {
-            note: { id: noteId, fields: renderCard(card, sourceLink) },
-          },
-        },
-        ...[...wanted]
-          .filter((tag) => !current.has(tag))
-          .map((tag) => ({
-            action: "addTags",
-            params: { notes: [noteId], tags: tag },
-          })),
-        ...[...current]
-          .filter((tag) => !wanted.has(tag))
-          .map((tag) => ({
-            action: "removeTags",
-            params: { notes: [noteId], tags: tag },
-          })),
-      ];
-    });
-    if (actions.length) {
-      await this.anki.multi(actions);
-      for (const { card, noteId, existing } of plan.update) {
+    for (const { card, noteId, existing } of plan.update) {
+      try {
+        const wanted = new Set([...card.tags, ...managedTags]);
+        const current = new Set(existing.tags);
+        await this.anki.updateNoteFields(noteId, renderCard(card, sourceLink));
+        const added = [...wanted].filter((tag) => !current.has(tag));
+        const removed = [...current].filter((tag) => !wanted.has(tag));
+        if (added.length) await this.anki.addTags([noteId], added.join(" "));
+        if (removed.length)
+          await this.anki.removeTags([noteId], removed.join(" "));
         const cardIds =
           existing.cards ?? (await this.anki.findCards(`nid:${noteId}`));
         await this.anki.changeDeck(cardIds, deck);
@@ -161,8 +144,12 @@ export class SyncEngine {
             remote: snapshot(card),
             filePath,
           };
+        summary.updated++;
+      } catch (error) {
+        summary.failures.push(
+          `Line ${card.range.line}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-      summary.updated = plan.update.length;
     }
     await this.anki.deleteNotes(plan.remove);
     summary.deleted = plan.remove.length;

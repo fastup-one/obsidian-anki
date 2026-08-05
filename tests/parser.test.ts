@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyRemoteCards,
+  duplicateCardKeys,
   insertMarkers,
   parseMarkdown,
   separateInlineForgeMarkers,
@@ -27,10 +28,9 @@ describe("Markdown scanner", () => {
     const original = String.raw`$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$`;
     const stripParagraph = (html: string) =>
       html.replace(/^<p>|<\/p>\n?$/g, "");
-    const normalizedByAnki = markdownToAnki(original).replace(
-      "<p>",
-      "<div>",
-    ).replace("</p>", "</div>");
+    const normalizedByAnki = markdownToAnki(original)
+      .replace("<p>", "<div>")
+      .replace("</p>", "</div>");
     const normalizeBlocks = (html: string) =>
       stripParagraph(html.replace(/^<div>|<\/div>\n?$/g, ""));
 
@@ -52,9 +52,9 @@ $$`;
         .replace(/<\/?(?:p|div)>/gi, "")
         .trim();
 
-    expect(
-      preserveEquivalentMarkdown(ankiHtml, original, htmlToMarkdown),
-    ).toBe(original);
+    expect(preserveEquivalentMarkdown(ankiHtml, original, htmlToMarkdown)).toBe(
+      original,
+    );
   });
   it("keeps cloze syntax only in the visible cloze field", () => {
     const card = parseMarkdown("Learn {1:this} and {2:that}\n").cards[0]!;
@@ -107,11 +107,12 @@ $$`;
     const reparsed = parseMarkdown(pulled).cards;
 
     expect(pulled).toBe(source);
-    expect(reparsed.map(({ key, front, back }) => ({ key, front, back })))
-      .toEqual([
-        { key: "one", front: "One", back: "1" },
-        { key: "two", front: "Two", back: "2" },
-      ]);
+    expect(
+      reparsed.map(({ key, front, back }) => ({ key, front, back })),
+    ).toEqual([
+      { key: "one", front: "One", back: "1" },
+      { key: "two", front: "Two", back: "2" },
+    ]);
   });
 
   it("puts a block ID on its own line when the file has no final newline", () => {
@@ -206,7 +207,9 @@ Next::Card
 `;
     const cards = parseMarkdown(source).cards;
     expect(cards).toHaveLength(2);
-    expect(cards[0]?.back).toContain(String.raw`\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`);
+    expect(cards[0]?.back).toContain(
+      String.raw`\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`,
+    );
 
     let index = 0;
     const marked = insertMarkers(
@@ -220,5 +223,32 @@ Next::Card
       "math",
       "inline",
     ]);
+  });
+  it("preserves tagged multiline syntax when applying an Anki edit", () => {
+    const source = "Why? #card\nOld answer\n^af-key\n";
+    const card = parseMarkdown(source).cards[0]!;
+    const updated = applyRemoteCards(source, [
+      { card, value: { ...card, back: "New answer" } },
+    ]);
+    expect(updated).toBe("Why? #card\nNew answer\n^af-key\n");
+  });
+  it("keeps fenced code inside a multiline answer", () => {
+    const source =
+      "Explain #card\n```ts\nconst answer = { value: 42 };\n```\nNext::Card\n";
+    const cards = parseMarkdown(source).cards;
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.back).toContain("const answer = { value: 42 };");
+    expect(cards[1]?.front).toBe("Next");
+  });
+  it("treats configured card tags as literal text", () => {
+    const cards = parseMarkdown("Question #[\nAnswer\n", {
+      cardTag: "[",
+    }).cards;
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.back).toBe("Answer");
+  });
+  it("detects duplicate Forge keys", () => {
+    const cards = parseMarkdown("One::1\n^af-same\nTwo::2\n^af-same\n").cards;
+    expect(duplicateCardKeys(cards)).toEqual(["same"]);
   });
 });

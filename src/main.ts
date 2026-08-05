@@ -2,6 +2,7 @@ import { Notice, Plugin, TFile } from "obsidian";
 import { AnkiClient } from "./anki";
 import type { PluginState } from "./domain";
 import {
+  duplicateCardKeys,
   insertMarkers,
   type ParserOptions,
   parseMarkdown,
@@ -180,6 +181,11 @@ export default class AnkiForgePlugin extends Plugin {
         await this.app.vault.process(file, () => source);
       }
       let parsed = parseMarkdown(source, this.parserOptions());
+      const duplicateKeys = duplicateCardKeys(parsed.cards);
+      if (duplicateKeys.length)
+        throw new Error(
+          `Duplicate Forge key${duplicateKeys.length === 1 ? "" : "s"}: ${duplicateKeys.join(", ")}. Give each card its own ^af-… line.`,
+        );
       const reconcileWarnings = await this.reconcileKeys(
         client,
         parsed.cards,

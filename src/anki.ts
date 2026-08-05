@@ -126,10 +126,14 @@ export class AnkiClient {
       ? this.invoke<null>("deleteNotes", { notes })
       : Promise.resolve(null);
   }
-  multi(actions: { action: string; params: Record<string, unknown> }[]) {
-    return actions.length
-      ? this.invoke<unknown[]>("multi", { actions })
-      : Promise.resolve([]);
+  updateNoteFields(id: number, fields: Record<string, string>) {
+    return this.invoke<null>("updateNoteFields", { note: { id, fields } });
+  }
+  addTags(notes: number[], tags: string) {
+    return this.invoke<null>("addTags", { notes, tags });
+  }
+  removeTags(notes: number[], tags: string) {
+    return this.invoke<null>("removeTags", { notes, tags });
   }
 }
 

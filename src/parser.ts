@@ -15,10 +15,12 @@ const defaults: ParserOptions = {
 };
 
 const stableMarker = /^\s*\^(af-[a-zA-Z0-9_-]+)\s*$/;
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function cardTag(line: string, options: ParserOptions): RegExpExecArray | null {
   return new RegExp(
-    `(?:^|\\s)#${options.cardTag}(?:[/-](reverse|spaced))?(?=\\s|$)`,
+    `(?:^|\\s)#${escapeRegExp(options.cardTag)}(?:[/-](reverse|spaced))?(?=\\s|$)`,
     "iu",
   ).exec(line);
 }
@@ -197,11 +199,23 @@ export function parseMarkdown(
     const tagged = cardTag(line, options);
     const tagData = splitTags(line);
     let candidate:
-      | Omit<ParsedCard, "range" | "markerOffset" | "tags" | "context">
+      | Omit<
+          ParsedCard,
+          | "range"
+          | "markerOffset"
+          | "tags"
+          | "context"
+          | "sourceStyle"
+          | "sourceTag"
+        >
       | undefined;
     let rangeEnd = offset + raw.length;
     let markerOffset = rangeEnd;
+    let sourceStyle: ParsedCard["sourceStyle"] = "inline";
+    let sourceTag: string | undefined;
     if (tagged) {
+      sourceStyle = "tagged";
+      sourceTag = tagged[0].trim();
       const mode = tagged[1]?.toLowerCase();
       const before = line.slice(0, tagged.index).trim();
       if (!before)
@@ -209,6 +223,7 @@ export function parseMarkdown(
       else {
         const answer: string[] = [];
         let answerDisplayMath = false;
+        let answerFence: string | undefined;
         if (mode !== "spaced")
           for (let j = i + 1; j < lines.length; j++) {
             const nextLine = (lines[j] ?? "").replace(/\r?\n$/, "");
@@ -216,12 +231,14 @@ export function parseMarkdown(
             const mathDelimiters = [...nextLine.matchAll(/(?<!\\)\$\$/g)]
               .length;
             const isDisplayMath = answerDisplayMath || mathDelimiters > 0;
+            const fenceMatch = nextLine.trim().match(/^(`{3,}|~{3,})/);
+            const inCodeFence = Boolean(answerFence || fenceMatch);
             if (
               !isDisplayMath &&
+              !inCodeFence &&
               (!nextLine.trim() ||
                 stableMarker.test(nextLine) ||
                 /^ {0,3}#{1,6}\s/.test(nextLine) ||
-                /^(`{3,}|~{3,})/.test(nextLine.trim()) ||
                 cardTag(nextLine, options) ||
                 inline(nextText, options) ||
                 cloze(nextText))
@@ -233,6 +250,15 @@ export function parseMarkdown(
             consumedUntil = j;
             if (mathDelimiters % 2 === 1)
               answerDisplayMath = !answerDisplayMath;
+            if (fenceMatch) {
+              const token = fenceMatch[1]!;
+              answerFence = answerFence
+                ? token[0] === answerFence[0] &&
+                  token.length >= answerFence.length
+                  ? undefined
+                  : answerFence
+                : token;
+            }
           }
         candidate = {
           kind:
@@ -252,6 +278,7 @@ export function parseMarkdown(
       if (parsedInline) candidate = parsedInline;
       else if (parsedCloze)
         candidate = { kind: "cloze", front: parsedCloze, back: "" };
+      if (parsedCloze && !parsedInline) sourceStyle = "cloze";
     }
     if (candidate) {
       const markerLine = consumedUntil >= i ? consumedUntil + 1 : i + 1;
@@ -267,13 +294,19 @@ export function parseMarkdown(
           ...new Set([
             ...globalTags,
             ...tagData.tags.filter(
-              (t) => !new RegExp(`^${options.cardTag}(?:[/-])?`, "i").test(t),
+              (t) =>
+                !new RegExp(
+                  `^${escapeRegExp(options.cardTag)}(?:[/-])?`,
+                  "i",
+                ).test(t),
             ),
           ]),
         ],
         context,
         range: { start: offset, end: rangeEnd, line: i + 1 },
         markerOffset,
+        sourceStyle,
+        ...(sourceTag ? { sourceTag } : {}),
       });
     }
     offset += raw.length;
@@ -305,12 +338,30 @@ export function insertMarkers(
   return { source, keys };
 }
 
-export function serializeSnapshot(value: CardSnapshot): string {
+export function duplicateCardKeys(cards: ParsedCard[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const card of cards)
+    if (card.key && seen.has(card.key)) duplicates.add(card.key);
+    else if (card.key) seen.add(card.key);
+  return [...duplicates];
+}
+
+export function serializeSnapshot(
+  value: CardSnapshot,
+  card?: ParsedCard,
+): string {
   const tags = value.tags.length
     ? ` ${value.tags.map((tag) => `#${tag.replaceAll("::", "/")}`).join(" ")}`
     : "";
   if (value.kind === "cloze")
     return value.front.replace(/\{\{c(\d+)::(.+?)\}\}/g, "{$1:$2}") + tags;
+  if (card?.sourceStyle === "tagged") {
+    const tag =
+      card.sourceTag ??
+      `#card${value.kind === "reversed" ? "-reverse" : value.kind === "spaced" ? "-spaced" : ""}`;
+    return `${value.front} ${tag}${tags}${value.kind === "spaced" || !value.back ? "" : `\n${value.back}`}`;
+  }
   if (value.kind === "spaced") return `${value.front} #card-spaced${tags}`;
   return `${value.front}${value.kind === "reversed" ? ":::" : "::"}${value.back}${tags}`;
 }
@@ -323,7 +374,7 @@ export function applyRemoteCards(
   const edits = changes.map(({ card, value }) => ({
     card,
     replacement:
-      serializeSnapshot(value) +
+      serializeSnapshot(value, card) +
       (source.slice(card.range.start, card.range.end).endsWith("\n")
         ? "\n"
         : ""),

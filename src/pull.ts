@@ -4,6 +4,7 @@ import { ConflictModal } from "./conflict-modal";
 import type { CardSnapshot, PluginState } from "./domain";
 import {
   applyRemoteCards,
+  duplicateCardKeys,
   type ParserOptions,
   parseMarkdown,
   removeForgeMarkers,
@@ -27,8 +28,7 @@ function remoteSnapshot(note: AnkiNote, fallback: CardSnapshot): CardSnapshot {
   return {
     kind: fallback.kind,
     front,
-    back:
-      fallback.kind === "cloze" ? "" : field(note, "Back", fallback.back),
+    back: fallback.kind === "cloze" ? "" : field(note, "Back", fallback.back),
     tags: [...note.tags].sort(),
   };
 }
@@ -48,6 +48,11 @@ export async function pullFromAnki(
 ): Promise<PullSummary> {
   let source = await app.vault.read(file);
   const doc = parseMarkdown(source, options);
+  const duplicateKeys = duplicateCardKeys(doc.cards);
+  if (duplicateKeys.length)
+    throw new Error(
+      `Duplicate Forge key${duplicateKeys.length === 1 ? "" : "s"}: ${duplicateKeys.join(", ")}`,
+    );
   const tracked = doc.cards.filter((c) => c.key && state.cards[c.key]);
   const notes = await client.notesInfo(
     tracked.map((c) => state.cards[c.key!]!.noteId),
