@@ -56,6 +56,26 @@ $$`;
       original,
     );
   });
+  it("converts math created in Anki back to Obsidian math syntax", () => {
+    const htmlToMarkdown = (html: string) =>
+      html.replace(/<\/?(?:p|div)>/gi, "").trim();
+    expect(
+      preserveEquivalentMarkdown(
+        String.raw`<div>\[\int_x^y f(x) dx\]</div>`,
+        "No math yet",
+        htmlToMarkdown,
+      ),
+    ).toBe(String.raw`$$
+\int_x^y f(x) dx
+$$`);
+    expect(
+      preserveEquivalentMarkdown(
+        String.raw`<div>The value is \(x^2\)</div>`,
+        "The value changed",
+        htmlToMarkdown,
+      ),
+    ).toBe("The value is $x^2$");
+  });
   it("keeps cloze syntax only in the visible cloze field", () => {
     const card = parseMarkdown("Learn {1:this} and {2:that}\n").cards[0]!;
     const fields = renderCard(card, "obsidian://source");
@@ -299,6 +319,31 @@ Next::Card
     expect(
       insertMarkers(pulled, reparsed.cards, () => "unexpected").keys,
     ).toEqual([]);
+  });
+  it("round-trips Anki-created display math in a multiline card", () => {
+    const source = "Why is the sky blue? #card\nShorter wavelengths\n^af-sky\n";
+    const card = parseMarkdown(source).cards[0]!;
+    const back = preserveEquivalentMarkdown(
+      String.raw`<div>Shorter wavelengths</div><div><br></div><div>scatter more</div><div>\[\int_x^y f(x) dx\]</div>`,
+      card.back,
+      (html) =>
+        html
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/?div>/gi, "\n")
+          .trim(),
+    );
+    const pulled = applyRemoteCards(source, [
+      { card, value: { ...card, back } },
+    ]);
+    const reparsed = parseMarkdown(pulled).cards[0]!;
+    expect(reparsed.key).toBe("sky");
+    expect(reparsed.back).toContain("$$\n\\int_x^y f(x) dx\n$$");
+    const fields = renderCard(reparsed, "source");
+    expect("Back" in fields).toBe(true);
+    const rendered = "Back" in fields ? fields.Back : "";
+    expect(rendered).toContain(String.raw`\[`);
+    expect(rendered).toContain(String.raw`\int_x^y f(x) dx`);
+    expect(rendered).toContain(String.raw`\]`);
   });
   it("keeps fenced code inside a multiline answer", () => {
     const source =

@@ -72,9 +72,14 @@ export function preserveEquivalentMarkdown(
           `\\[${body.replace(/[ \t]*\n[ \t]*/g, "")}\\]`,
       )
       .trim();
-  return canonical(remoteMarkdown) === canonical(renderedMarkdown)
-    ? originalMarkdown
-    : remoteMarkdown;
+  if (canonical(remoteMarkdown) === canonical(renderedMarkdown))
+    return originalMarkdown;
+  return remoteMarkdown
+    .replace(
+      /\\\[([\s\S]*?)\\\]/g,
+      (_match, body: string) => `$$\n${body.trim()}\n$$`,
+    )
+    .replace(/\\\(([^\n]*?)\\\)/g, (_match, body: string) => `$${body}$`);
 }
 export function renderCard(card: ParsedCard, sourceLink: string) {
   const context = card.context.join(" › ");
