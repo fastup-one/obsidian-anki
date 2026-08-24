@@ -17,7 +17,7 @@ export interface ParsedCard {
   context: string[];
   range: SourceRange;
   markerOffset: number;
-  sourceStyle: "inline" | "tagged" | "cloze";
+  sourceStyle: "inline" | "tagged" | "cloze" | "callout";
   sourceTag?: string;
 }
 

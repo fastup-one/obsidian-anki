@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { type Editor, Notice, Plugin, TFile } from "obsidian";
 import { AnkiClient } from "./anki";
 import type { PluginState } from "./domain";
 import { hydrateState, newState } from "./state";
@@ -68,6 +68,32 @@ export default class AnkiForgePlugin extends Plugin {
         return true;
       },
     });
+    this.addCommand({
+      id: "insert-anki-card",
+      name: "Insert Anki card",
+      editorCallback: (editor) => this.insertCalloutCard(editor, false),
+    });
+    this.addCommand({
+      id: "insert-anki-card-reversed",
+      name: "Insert reversed Anki card",
+      editorCallback: (editor) => this.insertCalloutCard(editor, true),
+    });
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor) => {
+        menu.addItem((item) =>
+          item
+            .setTitle("Insert Anki card")
+            .setIcon("layers")
+            .onClick(() => this.insertCalloutCard(editor, false)),
+        );
+        menu.addItem((item) =>
+          item
+            .setTitle("Insert reversed Anki card")
+            .setIcon("layers")
+            .onClick(() => this.insertCalloutCard(editor, true)),
+        );
+      }),
+    );
     this.addSettingTab(new SettingsTab(this.app, this));
     const status = this.addStatusBarItem();
     const updateStatus = async () => {
@@ -131,6 +157,13 @@ export default class AnkiForgePlugin extends Plugin {
       settings: this.settings,
       state: this.state,
     } satisfies Data);
+  }
+  private insertCalloutCard(editor: Editor, reversed: boolean) {
+    const head = reversed ? "> [!anki|reverse]" : "> [!anki]";
+    // Ensure the callout starts on its own line (a `>` mid-line is not a callout),
+    // and leave out an Extra section so the default CONTEXT backlink is used.
+    const lead = editor.getCursor().ch === 0 ? "" : "\n";
+    editor.replaceSelection(`${lead}${head}\n> Front\n> ---\n> Back\n`);
   }
   private parserOptions(): ParserOptions {
     return {

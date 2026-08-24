@@ -20,6 +20,11 @@ const stableMarker = /^\s*\^(af-[a-zA-Z0-9_-]+)\s*$/;
 // inside inline code or math is left in Front/Back; otherwise it is stripped from
 // Front/Back and carried on ParsedCard.extra.
 const extraComment = /<!--\s*extra\s*:\s*([\s\S]*?)-->/i;
+// Extended multi-line card written as an Obsidian callout, e.g. `> [!anki]` or
+// `> [!anki|reverse]`, whose quoted body is split by `---` lines into
+// Front / Back / (optional) Extra sections.
+const calloutHeader =
+  /^\s{0,3}>\s?\[!anki(?:[-|](reversed?))?\][-+]?[ \t]*(.*)$/i;
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -197,6 +202,7 @@ function markerAheadBeforeCard(
     if (!line.trim()) continue;
     const text = splitTags(line).text;
     if (
+      calloutHeader.test(line) ||
       /^ {0,3}#{1,6}\s/.test(line) ||
       cardTag(line, options) ||
       inline(text, options) ||
@@ -231,6 +237,12 @@ export function parseMarkdown(
     const raw = lines[i] ?? "";
     const line = raw.replace(/\r?\n$/, "");
     const trimmed = line.trim();
+    // Lines already consumed by a multi-line card (callout body, tagged answer) must
+    // not feed the document-level fence/math/heading state below.
+    if (i <= consumedUntil) {
+      offset += raw.length;
+      continue;
+    }
     if (i === 0 && trimmed === "---") {
       inFrontmatter = true;
       frontmatterStart = 1;
@@ -286,7 +298,73 @@ export function parseMarkdown(
       };
     }
 
-    if (i <= consumedUntil) {
+    const calloutMatch = calloutHeader.exec(line);
+    if (calloutMatch) {
+      const reversed = Boolean(calloutMatch[1]);
+      const title = (calloutMatch[2] ?? "").trim();
+      const body: string[] = [];
+      let calloutEnd = offset + raw.length;
+      let calloutConsumed = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        const rawNext = lines[j] ?? "";
+        if (!/^\s{0,3}>/.test(rawNext)) break;
+        body.push(rawNext.replace(/\r?\n$/, "").replace(/^\s{0,3}>\s?/, ""));
+        calloutEnd += rawNext.length;
+        calloutConsumed = j;
+      }
+      consumedUntil = calloutConsumed;
+      // Split into at most three sections. A `---` inside a fenced code block is
+      // literal content, not a separator; a 3rd `---` and anything after it stays in
+      // Extra rather than being dropped (and deleted on pull).
+      const sections: string[][] = [[]];
+      let bodyFence: string | undefined;
+      for (const bodyLine of body) {
+        if (!bodyFence && sections.length < 3 && /^-{3,}\s*$/.test(bodyLine)) {
+          sections.push([]);
+          continue;
+        }
+        sections[sections.length - 1]!.push(bodyLine);
+        const fence = bodyLine.trim().match(/^(`{3,}|~{3,})/);
+        if (fence) {
+          const token = fence[1]!;
+          bodyFence = bodyFence
+            ? token[0] === bodyFence[0] && token.length >= bodyFence.length
+              ? undefined
+              : bodyFence
+            : token;
+        }
+      }
+      // An optional callout title (text after `[!anki]`) becomes the first line of
+      // the front, so it is synced and preserved instead of silently dropped.
+      const front = [title, (sections[0] ?? []).join("\n")]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      const back = (sections[1] ?? []).join("\n").trim();
+      const extraSection = sections[2]
+        ? sections[2].join("\n").trim() || undefined
+        : undefined;
+      // An incomplete callout (still being typed) yields no card and — unlike a
+      // diagnostic — does not block the rest of the note from syncing.
+      if (front && back) {
+        const marker = stableMarker.exec(
+          (lines[calloutConsumed + 1] ?? "").trim(),
+        );
+        cards.push({
+          kind: reversed ? "reversed" : "basic",
+          front,
+          back,
+          extra: extraSection,
+          key: marker?.[1]?.slice(3),
+          tags: [...new Set(globalTags)],
+          context: options.context
+            ? headings.filter(Boolean).map((h) => h.title)
+            : [],
+          range: { start: offset, end: calloutEnd, line: i + 1 },
+          markerOffset: calloutEnd,
+          sourceStyle: "callout",
+        });
+      }
       offset += raw.length;
       continue;
     }
@@ -353,6 +431,7 @@ export function parseMarkdown(
               ((!nextLine.trim() &&
                 !markerAheadBeforeCard(lines, j + 1, options)) ||
                 stableMarker.test(nextLine) ||
+                calloutHeader.test(nextLine) ||
                 /^ {0,3}#{1,6}\s/.test(nextLine) ||
                 cardTag(nextLine, options) ||
                 inline(nextText, options) ||
@@ -492,6 +571,21 @@ export function serializeSnapshot(
   value: CardSnapshot,
   card?: ParsedCard,
 ): string {
+  if (card?.sourceStyle === "callout") {
+    const quote = (text: string) =>
+      text
+        .split("\n")
+        .map((entry) => (entry ? `> ${entry}` : ">"))
+        .join("\n");
+    const parts = [
+      `> [!anki${value.kind === "reversed" ? "|reverse" : ""}]`,
+      quote(value.front),
+      "> ---",
+      quote(value.back),
+    ];
+    if (card.extra) parts.push("> ---", quote(card.extra));
+    return parts.join("\n");
+  }
   // Re-attach the per-card Extra comment on the card's first line, so rewriting a
   // remotely-edited card during pull does not silently drop the user's annotation.
   const withExtra = (text: string) => {
