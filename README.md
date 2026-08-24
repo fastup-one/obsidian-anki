@@ -35,8 +35,8 @@ For a manual installation, download `main.js` and `manifest.json` from the lates
 Release files include signed GitHub build-provenance attestations. After downloading them, you can verify each file with the [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify main.js --repo keptan/obsidian-anki
-gh attestation verify manifest.json --repo keptan/obsidian-anki
+gh attestation verify main.js --repo fastup-one/obsidian-anki
+gh attestation verify manifest.json --repo fastup-one/obsidian-anki
 ```
 
 ## Your first cards

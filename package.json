@@ -8,12 +8,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/keptan/obsidian-anki.git"
+    "url": "git+https://github.com/fastup-one/obsidian-anki.git"
   },
   "bugs": {
-    "url": "https://github.com/keptan/obsidian-anki/issues"
+    "url": "https://github.com/fastup-one/obsidian-anki/issues"
   },
-  "homepage": "https://github.com/keptan/obsidian-anki#readme",
+  "homepage": "https://github.com/fastup-one/obsidian-anki#readme",
   "keywords": [
     "anki",
     "flashcards",
