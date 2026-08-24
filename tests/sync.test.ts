@@ -185,4 +185,50 @@ describe("fault isolation", () => {
     expect(state.cards.broken?.fingerprint).toBe("old");
     expect(state.cards.valid?.fingerprint).toBe(fingerprint(cards[1]!));
   });
+  it("adds missing model fields but never removes user-added ones", async () => {
+    const cards = parseMarkdown("Question::Answer\n^af-k\n").cards;
+    const removed: string[] = [];
+    const added: string[] = [];
+    const fake = {
+      modelNames: async () => ["Anki Forge Basic"],
+      modelFieldNames: async () => [
+        "Front",
+        "Back",
+        "Extra",
+        "ForgeKey",
+        "Hint",
+      ],
+      modelFieldAdd: async (_model: string, field: string) => {
+        added.push(field);
+        return null;
+      },
+      modelFieldRemove: async (_model: string, field: string) => {
+        removed.push(field);
+        return null;
+      },
+      modelFieldReposition: async () => null,
+      updateModelTemplates: async () => null,
+      updateModelStyling: async () => null,
+      createModel: async () => 1,
+      createDeck: async () => 1,
+      addNote: async () => 100,
+      canAddNotesWithErrorDetail: async () => [{ canAdd: true, error: null }],
+      findCards: async () => [],
+      changeDeck: async () => null,
+      deleteNotes: async () => null,
+    };
+    const state: PluginState = { version: 1, cards: {} };
+    await new SyncEngine(fake as never).apply(
+      { cards, create: cards, update: [], remove: [], unchanged: 0 },
+      state,
+      "Default",
+      "source",
+      "",
+      ["obsidian"],
+    );
+    // The user-added "Hint" field (and its content) must survive the sync.
+    expect(removed).toEqual([]);
+    // All required fields already exist, so nothing needs to be added either.
+    expect(added).toEqual([]);
+  });
 });

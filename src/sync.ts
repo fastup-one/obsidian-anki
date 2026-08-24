@@ -237,9 +237,9 @@ export class SyncEngine {
         await this.anki.createModel(definition);
       else {
         const fields = await this.anki.modelFieldNames(definition.modelName);
-        for (const field of fields)
-          if (!definition.inOrderFields.includes(field))
-            await this.anki.modelFieldRemove(definition.modelName, field);
+        // Only add missing fields; never remove unrecognized ones. modelFieldRemove
+        // deletes that field's content on every note of the model collection-wide, so
+        // it would silently destroy any field a user added to a Forge note type.
         for (const field of definition.inOrderFields)
           if (!fields.includes(field))
             await this.anki.modelFieldAdd(definition.modelName, field);
