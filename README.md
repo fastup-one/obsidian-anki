@@ -7,6 +7,7 @@ Anki Forge finds cards in your Markdown notes, shows you what will change, and s
 ## Why Anki Forge?
 
 - Write cards without leaving your notes.
+- Write rich, multi-line cards as collapsible callouts.
 - Preview every create, update, and deletion before it reaches Anki.
 - Edit cards in Obsidian or Anki and safely bring changes back.
 - Include images, audio, Markdown formatting, math, code, and embedded notes.
@@ -89,6 +90,54 @@ Add ordinary Obsidian tags anywhere on the card and Anki Forge will carry them i
 What does DNA stand for?::Deoxyribonucleic acid #biology #genetics
 ```
 
+## Rich cards with callouts
+
+For a card with a multi-line front, a multi-line back, or supporting detail, write it as an `[!anki]` callout. It renders as a tidy, collapsible box in Obsidian and still syncs to Anki:
+
+```markdown
+> [!anki] What is Workload Identity Federation?
+> ![[wif-diagram.png]]
+> ---
+> A way for external workloads to obtain Google Cloud credentials
+> **without long-lived service-account keys**.
+> ---
+> Related: [[Identity and Access Management]]
+^af-1c5px49s0a
+```
+
+The quoted body is divided by `---` lines into up to three sections:
+
+1. **Front** — the question. Text after `[!anki]` on the header line (the callout title) becomes the first line of the front.
+2. **Back** — the answer.
+3. **Extra** — optional supporting notes (see [The Extra field](#the-extra-field)).
+
+Everything inside the callout renders normally in Obsidian — images, links, math, and formatting — so the card reads well both in your notes and in Anki.
+
+For a card tested in both directions, use `> [!anki|reverse]` (or `> [!anki-reverse]`). Add a `-` after the type to start the box collapsed: `> [!anki]-`.
+
+To drop in an empty card, run **Insert Anki card** or **Insert reversed Anki card** from the command palette, or right-click in the editor and choose one.
+
+A few things to know:
+
+- The first two `---` lines separate the sections. A `---` inside a fenced code block counts as content, but a stand-alone `---` elsewhere in an answer starts a new section — wrap such content in a code fence.
+- Separate adjacent callouts with a blank line.
+- The `^af-...` block ID goes on the line directly below the callout; Anki Forge adds it for you on the first sync.
+
+## The Extra field
+
+Every card has an **Extra** field in Anki. By default it holds a **CONTEXT** link back to the source note in Obsidian, along with the heading trail when "Include heading context" is on.
+
+You can set your own Extra text per card:
+
+- In a callout, add a third `---` section.
+- On any single-line card, add an `<!--extra: ...-->` comment (hidden in Obsidian's reading view):
+
+  ```markdown
+  What does DNA stand for?::Deoxyribonucleic acid <!--extra: see the genetics note-->
+  ```
+
+Turn the field off entirely with the **Add Extra to cards** setting; cards then sync with an empty Extra.
+
 ## Choosing a deck
 
 Add an `anki-deck` property to the top of a note:
@@ -153,6 +202,7 @@ You can configure:
 - Default Anki tags
 - Inline and reversed-card separators
 - Heading context on cards
+- Whether to add an Extra field to cards
 - Automatic sync when leaving a note, independently toggleable
 - Automatic pulling of Anki edits when opening a note, independently toggleable
 
