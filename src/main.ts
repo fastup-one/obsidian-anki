@@ -244,6 +244,7 @@ export default class AnkiForgePlugin extends Plugin {
         existing,
         file.path,
         deck,
+        this.settings.extra,
       );
       if (!(await approveSync(this.app, file.path, plan))) {
         await this.removeUncommittedMarkers(file, provisionalKeys);
@@ -264,6 +265,7 @@ export default class AnkiForgePlugin extends Plugin {
         `obsidian://open?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(file.path)}`,
         file.path,
         this.managedTags(),
+        this.settings.extra,
       );
       const failedKeys = provisionalKeys.filter(
         (key) => !this.state.cards[key],

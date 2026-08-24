@@ -15,16 +15,21 @@ const defaults: ParserOptions = {
 };
 
 const stableMarker = /^\s*\^(af-[a-zA-Z0-9_-]+)\s*$/;
+// Per-card Extra override, e.g. `Front :: Back <!--extra: see the runbook-->`.
+// Located against a code/math-masked copy of the line, so a literal "<!--extra:"
+// inside inline code or math is left in Front/Back; otherwise it is stripped from
+// Front/Back and carried on ParsedCard.extra.
+const extraComment = /<!--\s*extra\s*:\s*([\s\S]*?)-->/i;
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function maskInlineMarkdown(line: string): string {
+function maskInlineMarkdown(line: string, maskComments = true): string {
   const masked = [...line];
   const hide = (start: number, end: number) => {
     for (let i = start; i < end; i++) masked[i] = " ";
   };
   for (let index = 0; index < line.length;) {
-    if (line.startsWith("<!--", index)) {
+    if (maskComments && line.startsWith("<!--", index)) {
       const end = line.indexOf("-->", index + 4);
       if (end >= 0) {
         hide(index, end + 3);
@@ -285,8 +290,26 @@ export function parseMarkdown(
       offset += raw.length;
       continue;
     }
-    const tagged = cardTag(line, options);
-    const tagData = splitTags(line);
+    // Find a top-level Extra comment by scanning a copy with only code spans and
+    // math masked, so a literal "<!--extra:" inside inline code/math is ignored.
+    // Slice from the raw line so its offsets are unchanged and the comment survives
+    // marker insertion untouched.
+    const extraMatch = extraComment.exec(maskInlineMarkdown(line, false));
+    let cardExtra: string | undefined;
+    let cardLine = line;
+    if (extraMatch) {
+      const rawComment = line.slice(
+        extraMatch.index,
+        extraMatch.index + extraMatch[0].length,
+      );
+      cardExtra = extraComment.exec(rawComment)?.[1]?.trim() || undefined;
+      cardLine = (
+        line.slice(0, extraMatch.index) +
+        line.slice(extraMatch.index + extraMatch[0].length)
+      ).replace(/[ \t]+$/, "");
+    }
+    const tagged = cardTag(cardLine, options);
+    const tagData = splitTags(cardLine);
     let candidate:
       | Omit<
           ParsedCard,
@@ -306,7 +329,7 @@ export function parseMarkdown(
       sourceStyle = "tagged";
       sourceTag = tagged[0].trim();
       const mode = tagged[1]?.toLowerCase();
-      const before = line.slice(0, tagged.index).trim();
+      const before = cardLine.slice(0, tagged.index).trim();
       if (!before)
         diagnostics.push({ line: i + 1, message: "Card tag has no prompt" });
       else {
@@ -394,6 +417,7 @@ export function parseMarkdown(
         : [];
       cards.push({
         ...candidate,
+        extra: cardExtra,
         key: marker?.[1]?.slice(3),
         tags: [
           ...new Set([
@@ -468,23 +492,40 @@ export function serializeSnapshot(
   value: CardSnapshot,
   card?: ParsedCard,
 ): string {
+  // Re-attach the per-card Extra comment on the card's first line, so rewriting a
+  // remotely-edited card during pull does not silently drop the user's annotation.
+  const withExtra = (text: string) => {
+    if (!card?.extra) return text;
+    const comment = ` <!--extra: ${card.extra}-->`;
+    const newline = text.indexOf("\n");
+    return newline < 0
+      ? text + comment
+      : text.slice(0, newline) + comment + text.slice(newline);
+  };
   const tags = value.tags.length
     ? ` ${value.tags.map((tag) => `#${tag.replaceAll("::", "/")}`).join(" ")}`
     : "";
   if (value.kind === "cloze")
-    return value.front.replace(/\{\{c(\d+)::(.+?)\}\}/g, "{$1:$2}") + tags;
+    return withExtra(
+      value.front.replace(/\{\{c(\d+)::(.+?)\}\}/g, "{$1:$2}") + tags,
+    );
   if (card?.sourceStyle === "tagged") {
     const tag =
       card.sourceTag ??
       `#card${value.kind === "reversed" ? "-reverse" : value.kind === "spaced" ? "-spaced" : ""}`;
-    return `${value.front} ${tag}${tags}${value.kind === "spaced" || !value.back ? "" : `\n${value.back}`}`;
+    return withExtra(
+      `${value.front} ${tag}${tags}${value.kind === "spaced" || !value.back ? "" : `\n${value.back}`}`,
+    );
   }
   if (card?.sourceStyle === "inline" && value.back.includes("\n")) {
     const tag = `${card.sourceTag ?? "#card"}${value.kind === "reversed" ? "-reverse" : ""}`;
-    return `${value.front} ${tag}${tags}\n${value.back}`;
+    return withExtra(`${value.front} ${tag}${tags}\n${value.back}`);
   }
-  if (value.kind === "spaced") return `${value.front} #card-spaced${tags}`;
-  return `${value.front}${value.kind === "reversed" ? ":::" : "::"}${value.back}${tags}`;
+  if (value.kind === "spaced")
+    return withExtra(`${value.front} #card-spaced${tags}`);
+  return withExtra(
+    `${value.front}${value.kind === "reversed" ? ":::" : "::"}${value.back}${tags}`,
+  );
 }
 
 export function applyRemoteCards(

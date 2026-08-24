@@ -17,7 +17,7 @@ const md: MarkdownIt = new MarkdownIt({
     return `<pre><code>${escapeHtml(code)}</code></pre>`;
   },
 });
-const RENDER_VERSION = 5;
+const RENDER_VERSION = 6;
 const mediaName = (path: string) =>
   (path.split("/").pop() ?? path).toLocaleLowerCase("en-US");
 export function snapshot(card: ParsedCard): CardSnapshot {
@@ -81,11 +81,21 @@ export function preserveEquivalentMarkdown(
     )
     .replace(/\\\(([^\n]*?)\\\)/g, (_match, body: string) => `$${body}$`);
 }
-export function renderCard(card: ParsedCard, sourceLink: string) {
-  const context = card.context.join(" › ");
-  const extra = [context, `[Open source note](${sourceLink})`]
-    .filter(Boolean)
-    .join("\n\n");
+export function renderCard(
+  card: ParsedCard,
+  sourceLink: string,
+  includeExtra = true,
+) {
+  let extra = "";
+  if (includeExtra) {
+    const context = card.context.join(" › ");
+    const source = card.extra?.trim()
+      ? card.extra.trim()
+      : sourceLink
+        ? `[CONTEXT](${sourceLink})`
+        : "";
+    extra = [context, source].filter(Boolean).join("\n\n");
+  }
   const common = {
     Extra: markdownToAnki(extra),
     ForgeKey: card.key ?? "",
@@ -99,14 +109,19 @@ export function renderCard(card: ParsedCard, sourceLink: string) {
       };
 }
 
-export function fingerprint(card: ParsedCard): string {
+export function fingerprint(card: ParsedCard, includeExtra = true): string {
   const stable = JSON.stringify({
     renderVersion: RENDER_VERSION,
     kind: card.kind,
     front: card.front,
     back: card.back,
     tags: [...card.tags].sort(),
-    context: card.context,
+    // The whole Extra field (heading breadcrumb + source/custom) renders only when
+    // the toggle is on, so fold both — and the flag itself — into the hash, letting
+    // a change to the setting re-sync otherwise-unchanged cards.
+    extra: includeExtra
+      ? { context: card.context, text: card.extra ?? "" }
+      : null,
   });
   let hash = 2166136261;
   for (let i = 0; i < stable.length; i++) {

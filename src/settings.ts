@@ -11,6 +11,7 @@ export interface Settings {
   folderDecks: boolean;
   cardTag: string;
   context: boolean;
+  extra: boolean;
   defaultTag: string;
   inlineSeparator: string;
   reverseSeparator: string;
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   folderDecks: true,
   cardTag: "card",
   context: true,
+  extra: true,
   defaultTag: "obsidian",
   inlineSeparator: "::",
   reverseSeparator: ":::",
@@ -40,6 +42,7 @@ type TextSetting =
 type ToggleSetting =
   | "folderDecks"
   | "context"
+  | "extra"
   | "syncOnClose"
   | "pullOnOpen";
 
@@ -75,6 +78,11 @@ export class SettingsTab extends PluginSettingTab {
       this.textDefinition("Default deck", "deck"),
       this.toggleDefinition("Use folder decks", "folderDecks"),
       this.toggleDefinition("Include heading context", "context"),
+      this.toggleDefinition(
+        "Add Extra to cards",
+        "extra",
+        "Fills each card's Extra field with a CONTEXT link back to the note, or your own text written as <!--extra: your text--> on the card line.",
+      ),
       this.textDefinition("Card tag", "cardTag"),
       this.textDefinition("Inline separator", "inlineSeparator"),
       this.textDefinition("Reversed separator", "reverseSeparator"),
@@ -115,6 +123,11 @@ export class SettingsTab extends PluginSettingTab {
     this.addText("Default deck", "deck");
     this.addToggle("Use folder decks", "folderDecks");
     this.addToggle("Include heading context", "context");
+    this.addToggle(
+      "Add Extra to cards",
+      "extra",
+      "Fills each card's Extra field with a CONTEXT link back to the note, or your own text written as <!--extra: your text--> on the card line.",
+    );
     this.addText("Card tag", "cardTag");
     this.addText("Inline separator", "inlineSeparator");
     this.addText("Reversed separator", "reverseSeparator");

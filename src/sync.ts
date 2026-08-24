@@ -34,6 +34,7 @@ export function planSync(
   existing: Map<number, AnkiNote>,
   filePath = "",
   deck = "",
+  includeExtra = true,
 ): SyncPlan {
   const liveKeys = new Set(
     cards.map((c) => c.key).filter((x): x is string => Boolean(x)),
@@ -44,7 +45,7 @@ export function planSync(
   for (const card of cards) {
     const stored = card.key ? state.cards[card.key] : undefined;
     const noteId = stored?.noteId;
-    const hash = fingerprint(card);
+    const hash = fingerprint(card, includeExtra);
     if (!noteId || !existing.has(noteId)) create.push(card);
     else if (
       !stored ||
@@ -72,6 +73,7 @@ export class SyncEngine {
     sourceLink: string,
     filePath = "",
     managedTags: string[] = [],
+    includeExtra = true,
   ): Promise<SyncSummary> {
     const summary: SyncSummary = {
       created: 0,
@@ -86,7 +88,7 @@ export class SyncEngine {
       const notes: AnkiCreateNote[] = plan.create.map((card) => ({
         deckName: deck,
         modelName: model(card),
-        fields: renderCard(card, sourceLink),
+        fields: renderCard(card, sourceLink, includeExtra),
         tags: [...new Set([...card.tags, ...managedTags])],
         // ForgeKey, not first-field text, is the identity. Anki's native
         // duplicate check rejects legitimate clozes/basic cards that happen
@@ -107,7 +109,7 @@ export class SyncEngine {
             if (card.key)
               state.cards[card.key] = {
                 noteId: id,
-                fingerprint: fingerprint(card),
+                fingerprint: fingerprint(card, includeExtra),
                 deck,
                 source: snapshot(card),
                 remote: snapshot(card),
@@ -129,7 +131,10 @@ export class SyncEngine {
       try {
         const wanted = new Set([...card.tags, ...managedTags]);
         const current = new Set(existing.tags);
-        await this.anki.updateNoteFields(noteId, renderCard(card, sourceLink));
+        await this.anki.updateNoteFields(
+          noteId,
+          renderCard(card, sourceLink, includeExtra),
+        );
         const added = [...wanted].filter((tag) => !current.has(tag));
         const removed = [...current].filter((tag) => !wanted.has(tag));
         if (added.length) await this.anki.addTags([noteId], added.join(" "));
@@ -141,7 +146,7 @@ export class SyncEngine {
         if (card.key)
           state.cards[card.key] = {
             noteId,
-            fingerprint: fingerprint(card),
+            fingerprint: fingerprint(card, includeExtra),
             deck,
             source: snapshot(card),
             remote: snapshot(card),

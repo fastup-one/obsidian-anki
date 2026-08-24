@@ -11,6 +11,8 @@ export interface ParsedCard {
   kind: CardKind;
   front: string;
   back: string;
+  /** Per-card Extra content, from a `<!--extra: ...-->` comment on the card line. */
+  extra?: string;
   tags: string[];
   context: string[];
   range: SourceRange;
